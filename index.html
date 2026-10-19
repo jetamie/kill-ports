@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>KillPorts · 端口占用查看与进程终结</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+    <link rel="icon" type="image/png" href="/app-icon.png" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <div class="brand">
+          <img src="/app-icon.png" alt="" class="brand-icon" />
+          <div class="brand-text">
+            <h1>KillPorts</h1>
+            <span class="brand-sub">本机监听端口 · 进程终结器</span>
+          </div>
+        </div>
+
+        <div class="stats" id="stats">
+          <div class="stat"><span class="stat-num" id="stat-total">–</span><span class="stat-label">端口</span></div>
+          <div class="stat"><span class="stat-num" id="stat-tcp">–</span><span class="stat-label">TCP</span></div>
+          <div class="stat"><span class="stat-num" id="stat-udp">–</span><span class="stat-label">UDP</span></div>
+          <div class="stat"><span class="stat-num" id="stat-procs">–</span><span class="stat-label">进程</span></div>
+        </div>
+
+        <div class="actions">
+          <label class="switch" title="每 4 秒自动刷新">
+            <input type="checkbox" id="auto-refresh" />
+            <span class="track"><span class="thumb"></span></span>
+            <span class="switch-text">自动刷新</span>
+          </label>
+          <button class="btn ghost" id="btn-refresh" title="重新扫描 (Ctrl+R)">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+            刷新
+          </button>
+        </div>
+      </header>
+
+      <div class="toolbar">
+        <div class="search">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <input id="search" type="text" placeholder="搜索端口 / 进程名 / PID / 地址…" spellcheck="false" />
+        </div>
+        <div class="tabs" id="tabs">
+          <button class="tab active" data-proto="all">全部</button>
+          <button class="tab" data-proto="TCP">TCP</button>
+          <button class="tab" data-proto="UDP">UDP</button>
+        </div>
+      </div>
+
+      <div class="banner warn hidden" id="banner">
+        <span class="banner-dot"></span>
+        <span id="banner-text">未以管理员身份运行：部分系统进程无法结束。</span>
+        <button class="btn small danger-outline" id="btn-admin">以管理员身份重启</button>
+      </div>
+
+      <main class="table-wrap">
+        <table class="port-table" id="table">
+          <thead>
+            <tr>
+              <th class="col-port">端口</th>
+              <th class="col-proto">协议</th>
+              <th class="col-addr">监听地址</th>
+              <th class="col-state">状态</th>
+              <th class="col-proc">进程</th>
+              <th class="col-pid">PID</th>
+              <th class="col-mem">内存</th>
+              <th class="col-act"></th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+        <div class="empty hidden" id="empty">
+          <div class="empty-icon">🔌</div>
+          <p id="empty-text">没有匹配的监听端口</p>
+        </div>
+        <div class="loading" id="loading"><span class="spinner"></span>正在扫描端口…</div>
+      </main>
+
+      <footer class="statusbar">
+        <span id="status-left">就绪</span>
+        <span class="status-right">双击行可复制命令 · 数据来自系统网络表</span>
+      </footer>
+    </div>
+
+    <!-- 结束进程确认弹窗 -->
+    <div class="modal-mask hidden" id="modal">
+      <div class="modal">
+        <div class="modal-head">
+          <div class="modal-title">结束进程确认</div>
+          <button class="modal-close" id="modal-close">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="modal-target">
+            <div class="m-row"><span class="m-key">进程</span><span class="m-val" id="m-name">–</span></div>
+            <div class="m-row"><span class="m-key">PID</span><span class="m-val mono" id="m-pid">–</span></div>
+            <div class="m-row"><span class="m-key">端口</span><span class="m-val mono" id="m-port">–</span></div>
+            <div class="m-row"><span class="m-key">路径</span><span class="m-val mono small" id="m-exe">–</span></div>
+          </div>
+          <p class="modal-warn">⚠️ 强制结束进程可能导致未保存的数据丢失，请确认该端口对应的进程。</p>
+        </div>
+        <div class="modal-foot">
+          <button class="btn ghost" id="btn-cancel">取消</button>
+          <button class="btn danger" id="btn-kill">强制结束</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="toast-holder" id="toasts"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
