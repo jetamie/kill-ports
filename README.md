@@ -5,6 +5,8 @@
 
 基于 Tauri 2.0 的桌面工具：一键查看本机所有监听端口（TCP LISTEN + UDP 绑定），并可直接强制结束占用端口的进程。
 
+**📖 项目主页（在线文档）：<https://jetamie.github.io/kill-ports/>**
+
 ![界面预览](docs/preview.png)
 
 ## 功能
