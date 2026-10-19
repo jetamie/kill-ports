@@ -69,6 +69,6 @@ jobs:
             | `KillPorts_*_x64_en-US.msi` | MSI 安装包（适合企业分发） |
 
             功能：枚举本机监听端口（TCP LISTEN / UDP 绑定），关联进程名与 PID，支持一键强制结束进程。
-          releaseDraft: true
+          releaseDraft: false
           prerelease: false
           args: --bundles nsis,msi
