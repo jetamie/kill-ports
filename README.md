@@ -1,5 +1,8 @@
 # KillPorts
 
+[![Release](https://github.com/jetamie/kill-ports/actions/workflows/release.yml/badge.svg)](https://github.com/jetamie/kill-ports/actions/workflows/release.yml)
+[![Latest Release](https://img.shields.io/github/v/release/jetamie/kill-ports)](https://github.com/jetamie/kill-ports/releases/latest)
+
 基于 Tauri 2.0 的桌面工具：一键查看本机所有监听端口（TCP LISTEN + UDP 绑定），并可直接强制结束占用端口的进程。
 
 ![界面预览](docs/preview.png)
@@ -27,6 +30,27 @@ npm run app:build   # 构建发布包
 | --- | --- |
 | `src-tauri/target/release/kill-ports.exe` | 免安装单文件程序（约 3.2 MB） |
 | `src-tauri/target/release/bundle/nsis/KillPorts_0.1.0_x64-setup.exe` | NSIS 安装包（约 1.2 MB） |
+
+## 发版流程（GitHub Actions 自动打包）
+
+工作流：`.github/workflows/release.yml`
+
+**触发方式**
+
+1. 推送 `v*` 标签 → 自动构建并创建正式 Release（含 NSIS + MSI 安装包）
+2. 手动触发：Actions → Release → Run workflow，填写要发布的 tag
+
+```bash
+# 1. 同步版本号（package.json / src-tauri/tauri.conf.json / src-tauri/Cargo.toml）
+# 2. 提交后打标签推送
+git commit -am "chore: release v0.1.1"
+git push
+git tag v0.1.1
+git push origin v0.1.1
+```
+
+构建产物会作为 Release 附件上传：`KillPorts_<version>_x64-setup.exe`、`KillPorts_<version>_x64_en-US.msi`。
+如需人工确认后再发布，把 `releaseDraft` 改为 `true` 即可生成草稿 Release。
 
 > 结束系统级服务（如 `svchost.exe`、`System`）通常需要以管理员身份运行，普通权限下会返回明确的失败提示。
 
