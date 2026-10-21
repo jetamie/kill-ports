@@ -10,6 +10,8 @@ interface PortInfo {
   exePath: string | null;
   commandLine: string | null;
   memory: number | null;
+  /** 是否系统进程（由后端判定） */
+  system: boolean;
 }
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) =>
@@ -21,6 +23,7 @@ const emptyText = $("#empty-text");
 const loading = $("#loading");
 const search = $<HTMLInputElement>("#search");
 const autoRefresh = $<HTMLInputElement>("#auto-refresh");
+const hideSystemToggle = $<HTMLInputElement>("#hide-system");
 const refreshBtn = $("#btn-refresh");
 const banner = $("#banner");
 const bannerText = $("#banner-text");
@@ -31,6 +34,7 @@ const toasts = $("#toasts");
 
 let all: PortInfo[] = [];
 let protoFilter = "all";
+let hideSystem = false;
 let scanning = false;
 let timer: number | undefined;
 let pending: PortInfo | null = null;
@@ -66,6 +70,7 @@ function filtered(): PortInfo[] {
   const q = search.value.trim().toLowerCase();
   return all.filter((p) => {
     if (protoFilter !== "all" && p.protocol !== protoFilter) return false;
+    if (hideSystem && p.system) return false;
     if (!q) return true;
     const hay = [
       String(p.port),
@@ -104,7 +109,7 @@ function render() {
         <td><span class="badge ${p.protocol.toLowerCase()}">${p.protocol}</span></td>
         <td class="addr">${esc(p.localAddr)}<span class="port-echo">:${p.port}</span></td>
         <td><span class="state ${p.protocol === "UDP" ? "udp" : ""}"><span class="dot"></span>${esc(p.state)}</span></td>
-        <td><div class="proc"><span class="proc-name ${p.processName ? "" : "unknown"}" title="${esc(p.exePath ?? name)}">${esc(name)}</span></div></td>
+        <td><div class="proc"><span class="proc-name ${p.processName ? "" : "unknown"}" title="${esc(p.exePath ?? name)}">${esc(name)}</span>${p.system ? '<span class="tag-sys">系统</span>' : ""}</div></td>
         <td class="pid">${p.pid ?? "–"}</td>
         <td class="mem">${fmtMem(p.memory)}</td>
         <td class="cell-act"><button class="kill-btn" data-kill="${p.pid ?? ""}" ${canKill ? "" : "disabled"} title="强制结束该进程">
@@ -116,12 +121,15 @@ function render() {
 
   emptyBox.classList.toggle("hidden", rows.length > 0);
   if (rows.length === 0) {
-    emptyText.textContent = all.length
-      ? "没有匹配的监听端口，换个关键词试试"
-      : "当前没有监听中的端口";
+    if (!all.length) emptyText.textContent = "当前没有监听中的端口";
+    else if (hideSystem && all.some((p) => p.system))
+      emptyText.textContent = "系统进程已全部隐藏，取消勾选即可查看";
+    else emptyText.textContent = "没有匹配的监听端口，换个关键词试试";
   }
 
-  statusLeft.textContent = `最后扫描 ${new Date().toLocaleTimeString("zh-CN", { hour12: false })} · 共 ${all.length} 条监听记录`;
+  const sysCount = all.filter((p) => p.system).length;
+  const hiddenNote = hideSystem && sysCount ? ` · 已隐藏 ${sysCount} 条系统进程` : "";
+  statusLeft.textContent = `最后扫描 ${new Date().toLocaleTimeString("zh-CN", { hour12: false })} · 共 ${all.length} 条监听记录${hiddenNote}`;
 }
 
 async function refresh(initial = false) {
@@ -222,6 +230,13 @@ $("#tabs").addEventListener("click", (ev) => {
     .forEach((t) => t.classList.toggle("active", t === tab));
   render();
 });
+hideSystemToggle.addEventListener("change", () => {
+  hideSystem = hideSystemToggle.checked;
+  render();
+  const hidden = all.filter((p) => p.system).length;
+  toast(hideSystem ? `已隐藏 ${hidden} 条系统进程` : "已恢复显示系统进程", "ok");
+});
+
 autoRefresh.addEventListener("change", () => {
   if (autoRefresh.checked) {
     timer = window.setInterval(() => {
@@ -286,6 +301,7 @@ function mockData(): PortInfo[] {
     exePath: name ? `C:\\Program Files\\Demo\\${name}` : null,
     commandLine: null,
     memory: mem,
+    system: name === "svchost.exe" || pid === 4,
   });
   return [
     mk(135, "TCP", "0.0.0.0", 512, "svchost.exe", 12 * 1024 * 1024),

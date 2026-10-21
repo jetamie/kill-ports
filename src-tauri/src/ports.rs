@@ -20,6 +20,83 @@ pub struct PortInfo {
     pub command_line: Option<String>,
     /// 常驻内存（字节）
     pub memory: Option<u64>,
+    /// 是否系统进程（Windows 系统目录下的可执行文件，或内核组件）
+    pub system: bool,
+}
+
+/// 归一化路径：统一分隔符、去掉 Windows 扩展长度前缀（\\?\ 与 \\?\UNC\）、转小写
+fn normalize_path(path: &str) -> String {
+    let lower = path.replace('/', "\\").to_ascii_lowercase();
+    if let Some(rest) = lower.strip_prefix(r"\\?\unc\") {
+        return format!("\\\\{rest}");
+    }
+    if let Some(rest) = lower.strip_prefix(r"\\?\") {
+        return rest.to_string();
+    }
+    lower
+}
+
+/// 路径是否位于指定目录之下（大小写与分隔符不敏感，兼容扩展长度前缀）
+fn is_under_dir(path: &str, dir: &str) -> bool {
+    let p = normalize_path(path);
+    let d = normalize_path(dir);
+    let d = d.trim_end_matches('\\');
+    if d.is_empty() {
+        return false;
+    }
+    p == d || p.starts_with(&format!("{d}\\"))
+}
+
+/// 系统目录清单：Windows 下取 %SystemRoot% / %windir%
+fn system_dirs() -> Vec<String> {
+    let mut dirs: Vec<String> = Vec::new();
+    for key in ["SystemRoot", "windir"] {
+        if let Ok(v) = std::env::var(key) {
+            let v = v.trim().to_string();
+            if !v.is_empty() && !dirs.iter().any(|d| d.eq_ignore_ascii_case(&v)) {
+                dirs.push(v);
+            }
+        }
+    }
+    dirs
+}
+
+/// 没有 exe 路径时，仅凭进程名即可识别的内核 / 系统组件
+const SYSTEM_PROCESS_NAMES: &[&str] = &[
+    "system",
+    "system idle process",
+    "registry",
+    "memory compression",
+    "secure system",
+    "svchost.exe",
+    "lsass.exe",
+    "services.exe",
+    "wininit.exe",
+    "winlogon.exe",
+    "csrss.exe",
+    "smss.exe",
+    "spoolsv.exe",
+    "fontdrvhost.exe",
+    "dwm.exe",
+];
+
+/// PID 0（System Idle）与 PID 4（System / Windows 内核）本身即系统组件
+fn is_system_pid(pid: Option<u32>) -> bool {
+    matches!(pid, Some(0) | Some(4))
+}
+
+/// 判断是否为系统进程：可执行文件位于系统目录，或缺少路径时命中内核组件名。
+/// 若给出了明确路径且不在系统目录（例如用户目录下同名的 svchost.exe），按普通用户程序处理。
+fn is_system_process_in(name: Option<&str>, exe: Option<&str>, dirs: &[String]) -> bool {
+    if let Some(path) = exe {
+        if dirs.iter().any(|d| is_under_dir(path, d)) {
+            return true;
+        }
+    }
+    match name {
+        Some(n) => SYSTEM_PROCESS_NAMES.contains(&n.trim().to_ascii_lowercase().as_str()) && exe.is_none(),
+        None => false,
+    }
 }
 
 /// 枚举本机所有监听中的端口（TCP LISTEN + UDP 已绑定）
@@ -57,6 +134,7 @@ pub fn list_listening_ports() -> Result<Vec<PortInfo>, String> {
         info
     };
 
+    let sys_dirs = system_dirs();
     let mut out: Vec<PortInfo> = Vec::new();
     for si in sockets_info {
         let (protocol, local_addr, port, state) = match &si.protocol_socket_info {
@@ -78,6 +156,8 @@ pub fn list_listening_ports() -> Result<Vec<PortInfo>, String> {
                 .unwrap_or((None, None, None, None)),
             None => (None, None, None, None),
         };
+        let system = is_system_pid(pid)
+            || is_system_process_in(process_name.as_deref(), exe_path.as_deref(), &sys_dirs);
 
         out.push(PortInfo {
             protocol: protocol.to_string(),
@@ -89,6 +169,7 @@ pub fn list_listening_ports() -> Result<Vec<PortInfo>, String> {
             exe_path,
             command_line: cmd.filter(|c| !c.is_empty()),
             memory,
+            system,
         });
     }
 
@@ -187,17 +268,104 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_is_system_process_classification() {
+        let dirs = vec!["C:\\Windows".to_string()];
+
+        // 系统目录下的可执行文件 → 系统进程（大小写 / 分隔符不敏感）
+        assert!(is_system_process_in(
+            Some("svchost.exe"),
+            Some("C:\\Windows\\System32\\svchost.exe"),
+            &dirs
+        ));
+        assert!(is_system_process_in(
+            Some("explorer.exe"),
+            Some("c:/windows/explorer.exe"),
+            &dirs
+        ));
+        assert!(is_system_process_in(
+            Some("SearchIndexer.exe"),
+            Some("C:\\Windows\\System32\\SearchIndexer.exe"),
+            &dirs
+        ));
+
+        // 内核 / 系统组件通常拿不到 exe 路径，按进程名识别
+        assert!(is_system_process_in(Some("System"), None, &dirs));
+        assert!(is_system_process_in(Some("Registry"), None, &dirs));
+        assert!(is_system_process_in(Some("svchost.exe"), None, &dirs));
+
+        // 用户程序：路径不在系统目录
+        assert!(!is_system_process_in(
+            Some("node.exe"),
+            Some("C:\\Program Files\\nodejs\\node.exe"),
+            &dirs
+        ));
+        assert!(!is_system_process_in(
+            Some("java.exe"),
+            Some("D:\\dev\\jdk\\bin\\java.exe"),
+            &dirs
+        ));
+
+        // 同名但位于用户目录 → 按普通程序处理
+        assert!(!is_system_process_in(
+            Some("svchost.exe"),
+            Some("D:\\tools\\svchost.exe"),
+            &dirs
+        ));
+
+        // 未知进程名且没有路径
+        assert!(!is_system_process_in(Some("myapp.exe"), None, &dirs));
+        assert!(!is_system_process_in(None, None, &dirs));
+
+        // 空目录清单不应把所有路径都判成系统进程
+        assert!(!is_system_process_in(Some("node.exe"), Some("C:\\x\\node.exe"), &[]));
+
+        // PID 0 / 4 本身就是内核组件
+        assert!(is_system_pid(Some(0)));
+        assert!(is_system_pid(Some(4)));
+        assert!(!is_system_pid(Some(1234)));
+        assert!(!is_system_pid(None));
+    }
+
+    #[test]
     fn test_list_listening_ports() {
         let ports = list_listening_ports().expect("枚举失败");
         println!("共枚举到 {} 个监听端口", ports.len());
         for p in ports.iter().take(10) {
             println!(
-                "  {} {}:{}  pid={:?}  proc={:?}",
-                p.protocol, p.local_addr, p.port, p.pid, p.process_name
+                "  {} {}:{}  pid={:?}  proc={:?}  system={}  exe={:?}",
+                p.protocol, p.local_addr, p.port, p.pid, p.process_name, p.system, p.exe_path
             );
         }
         assert!(!ports.is_empty(), "本机至少应有一个监听端口");
         assert!(ports.iter().all(|p| p.port > 0));
         assert!(ports.is_sorted_by_key(|p| (p.port, p.protocol.clone())));
+
+        // 系统目录下的可执行文件必须被标记为系统进程
+        let dirs = system_dirs();
+        for p in &ports {
+            if let Some(exe) = &p.exe_path {
+                if dirs.iter().any(|d| is_under_dir(exe, d)) {
+                    assert!(p.system, "{exe} 位于系统目录却未标记为系统进程");
+                }
+            }
+        }
+        let sys_count = ports.iter().filter(|p| p.system).count();
+        println!("其中系统进程占用 {sys_count} 条（系统目录：{dirs:?}）");
+        assert!(sys_count <= ports.len());
+
+        // 真实数据抽查：PID 4（System）占用的端口必须被标记为系统进程
+        if let Some(p) = ports.iter().find(|p| p.pid == Some(4)) {
+            assert!(p.system, "PID 4 占用的端口未被标记为系统进程");
+        }
+
+        // 真实数据抽查：svchost.exe 一定来自系统目录，必须被识别
+        if let Some(p) = ports.iter().find(|p| {
+            p.process_name
+                .as_deref()
+                .map(|n| n.eq_ignore_ascii_case("svchost.exe"))
+                .unwrap_or(false)
+        }) {
+            assert!(p.system, "svchost.exe 未被识别为系统进程：{:?}", p.exe_path);
+        }
     }
 }
