@@ -1,6 +1,6 @@
 [package]
 name = "kill-ports"
-version = "0.1.0"
+version = "0.1.1"
 description = "查看本机监听端口并结束占用进程"
 authors = ["kill-ports"]
 edition = "2021"
