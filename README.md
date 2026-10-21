@@ -32,7 +32,7 @@ npm run app:build   # 构建发布包
 | 文件 | 说明 |
 | --- | --- |
 | `src-tauri/target/release/kill-ports.exe` | 免安装单文件程序（约 3.2 MB） |
-| `src-tauri/target/release/bundle/nsis/KillPorts_0.1.0_x64-setup.exe` | NSIS 安装包（约 1.2 MB） |
+| `src-tauri/target/release/bundle/nsis/KillPorts_<版本>_x64-setup.exe` | NSIS 安装包（约 1.2 MB） |
 
 ## 发版流程（GitHub Actions 自动打包）
 
